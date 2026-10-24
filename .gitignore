@@ -1,0 +1,28 @@
+# Visual Studio / Rider / IDE cache
+.vs/
+.idea/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Unreal Engine generated & intermediate directories
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# Crash reports & auto-saves
+AutoSave/
+CrashReportClient/
+
+# Package builds
+Packages/
+ArchivedBuilds/
+
+# Ignore Visual Studio temporary files
+*.opendb
+*.db
