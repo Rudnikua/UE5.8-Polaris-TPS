@@ -8,10 +8,13 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "AbilitySystemComponent.h"
+#include "AbilitySystem/PolarisAttributeSet.h"
+#include "Abilities/GameplayAbility.h"
 
 APolarisBaseCharacter::APolarisBaseCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
@@ -23,13 +26,40 @@ APolarisBaseCharacter::APolarisBaseCharacter()
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 250.0f;
-	CameraBoom->SocketOffset = FVector(0.0f, 50.0f, 60.0f); // Зсув праворуч через праве плече
+	CameraBoom->TargetArmLength = DefaultArmLength;
+	CameraBoom->SocketOffset = DefaultSocketOffset;
 	CameraBoom->bUsePawnControlRotation = true;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
+
+	AbilitySystemComponent = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
+	AbilitySystemComponent->SetIsReplicated(true);
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	AttributeSet = CreateDefaultSubobject<UPolarisAttributeSet>(TEXT("AttributeSet"));
+}
+
+void APolarisBaseCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (CameraBoom && FollowCamera)
+	{
+		const float TargetFOV = bIsAiming ? AimFOV : DefaultFOV;
+		const float TargetArmLength = bIsAiming ? AimArmLength : DefaultArmLength;
+		const FVector TargetSocketOffset = bIsAiming ? AimSocketOffset : DefaultSocketOffset;
+
+		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
+		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
+	}
+}
+
+UAbilitySystemComponent* APolarisBaseCharacter::GetAbilitySystemComponent() const
+{
+	return AbilitySystemComponent;
 }
 
 void APolarisBaseCharacter::BeginPlay()
@@ -46,6 +76,17 @@ void APolarisBaseCharacter::BeginPlay()
 
 }
 
+void APolarisBaseCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	if (AbilitySystemComponent)
+	{
+		AbilitySystemComponent->InitAbilityActorInfo(this, this);
+		GiveStartupAbilities();
+	}
+}
+
 void APolarisBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -57,6 +98,9 @@ void APolarisBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &APolarisBaseCharacter::StartAiming);
+		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &APolarisBaseCharacter::StopAiming);
 	}
 }
 
@@ -85,6 +129,39 @@ void APolarisBaseCharacter::Look(const FInputActionValue& Value)
 	{
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
+	}
+}
+
+void APolarisBaseCharacter::StartAiming()
+{
+	bIsAiming = true;
+
+	bUseControllerRotationYaw = true;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
+	GetCharacterMovement()->MaxWalkSpeed = 350.0f; 
+}
+
+void APolarisBaseCharacter::StopAiming()
+{
+	bIsAiming = false;
+
+	bUseControllerRotationYaw = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->MaxWalkSpeed = 500.0f; 
+}
+
+
+void APolarisBaseCharacter::GiveStartupAbilities()
+{
+	if (!AbilitySystemComponent) return;
+
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (AbilityClass)
+		{
+			FGameplayAbilitySpec AbilitySpec(AbilityClass, 1);
+			AbilitySystemComponent->GiveAbility(AbilitySpec);
+		}
 	}
 }
 
