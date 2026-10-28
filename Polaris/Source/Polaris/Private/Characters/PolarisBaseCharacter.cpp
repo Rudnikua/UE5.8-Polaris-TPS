@@ -11,6 +11,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/PolarisAttributeSet.h"
 #include "Abilities/GameplayAbility.h"
+#include "AbilitySystem/PolarisGameplayTags.h"
 
 APolarisBaseCharacter::APolarisBaseCharacter()
 {
@@ -20,7 +21,7 @@ APolarisBaseCharacter::APolarisBaseCharacter()
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
 
-	GetCharacterMovement()->bOrientRotationToMovement = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 600.0f, 0.0f);
 
@@ -47,9 +48,10 @@ void APolarisBaseCharacter::Tick(float DeltaTime)
 
 	if (CameraBoom && FollowCamera)
 	{
-		const float TargetFOV = bIsAiming ? AimFOV : DefaultFOV;
-		const float TargetArmLength = bIsAiming ? AimArmLength : DefaultArmLength;
-		const FVector TargetSocketOffset = bIsAiming ? AimSocketOffset : DefaultSocketOffset;
+		const bool bCurrentlyAiming = IsAiming();
+		const float TargetFOV = bCurrentlyAiming ? AimFOV : DefaultFOV;
+		const float TargetArmLength = bCurrentlyAiming ? AimArmLength : DefaultArmLength;
+		const FVector TargetSocketOffset = bCurrentlyAiming ? AimSocketOffset : DefaultSocketOffset;
 
 		FollowCamera->SetFieldOfView(FMath::FInterpTo(FollowCamera->FieldOfView, TargetFOV, DeltaTime, CameraInterpSpeed));
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
@@ -134,7 +136,11 @@ void APolarisBaseCharacter::Look(const FInputActionValue& Value)
 
 void APolarisBaseCharacter::StartAiming()
 {
-	bIsAiming = true;
+	if (AbilitySystemComponent)
+	{
+		// Вішаємо тег State.Aiming (кількість = 1)
+		AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_Aiming, 1);
+	}
 
 	bUseControllerRotationYaw = true;
 	GetCharacterMovement()->bOrientRotationToMovement = false;
@@ -143,11 +149,24 @@ void APolarisBaseCharacter::StartAiming()
 
 void APolarisBaseCharacter::StopAiming()
 {
-	bIsAiming = false;
+	if (AbilitySystemComponent)
+	{
+		// Знімаємо тег State.Aiming (кількість = 0)
+		AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_Aiming, 0);
+	}
 
 	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->MaxWalkSpeed = 500.0f; 
+}
+
+bool APolarisBaseCharacter::IsAiming() const
+{
+	if (AbilitySystemComponent)
+	{
+		return AbilitySystemComponent->HasMatchingGameplayTag(PolarisGameplayTags::State_Aiming);
+	}
+	return false;
 }
 
 
@@ -165,3 +184,11 @@ void APolarisBaseCharacter::GiveStartupAbilities()
 	}
 }
 
+FRotator APolarisBaseCharacter::GetAimOffsets() const
+{
+	const FRotator ControlRotation = GetControlRotation();
+	const FRotator ActorRotation = GetActorRotation();
+
+	FRotator DeltaRotation = (ControlRotation - ActorRotation).GetNormalized();
+	return DeltaRotation;
+}

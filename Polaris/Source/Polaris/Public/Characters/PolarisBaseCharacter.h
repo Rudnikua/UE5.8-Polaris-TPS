@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "InputActionValue.h"
 #include "AbilitySystemInterface.h"
+#include "PolarisTypes.h"
 #include "PolarisBaseCharacter.generated.h"
 
 class UInputAction;
@@ -29,6 +30,7 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	FORCEINLINE UPolarisAttributeSet* GetAttributeSet() const { return AttributeSet; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -40,6 +42,9 @@ protected:
 	void Look(const FInputActionValue& Value);
 	void StartAiming();
 	void StopAiming();
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat")
+	bool IsAiming() const;
 
 	void GiveStartupAbilities();
 
@@ -65,8 +70,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Polaris|Input")
 	TObjectPtr<UInputAction> AimAction;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|Combat")
-	bool bIsAiming = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polaris|Combat")
+	EPolarisOverlayState OverlayState = EPolarisOverlayState::Unarmed;
 
 	/* adjust ADS*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polaris|Camera|ADS")
@@ -99,4 +104,7 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Polaris|GAS")
 	TArray<TSubclassOf<UGameplayAbility>> StartupAbilities;
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat")
+	FRotator GetAimOffsets() const;
 };
