@@ -12,6 +12,7 @@
 #include "AbilitySystem/PolarisAttributeSet.h"
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/PolarisGameplayTags.h"
+#include "Kismet/KismetSystemLibrary.h"
 
 APolarisBaseCharacter::APolarisBaseCharacter()
 {
@@ -48,7 +49,7 @@ void APolarisBaseCharacter::Tick(float DeltaTime)
 
 	if (CameraBoom && FollowCamera)
 	{
-		const bool bCurrentlyAiming = IsAiming();
+		const bool bCurrentlyAiming = IsAiming() && !IsWeaponBlocked();
 		const float TargetFOV = bCurrentlyAiming ? AimFOV : DefaultFOV;
 		const float TargetArmLength = bCurrentlyAiming ? AimArmLength : DefaultArmLength;
 		const FVector TargetSocketOffset = bCurrentlyAiming ? AimSocketOffset : DefaultSocketOffset;
@@ -57,6 +58,8 @@ void APolarisBaseCharacter::Tick(float DeltaTime)
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, TargetArmLength, DeltaTime, CameraInterpSpeed);
 		CameraBoom->SocketOffset = FMath::VInterpTo(CameraBoom->SocketOffset, TargetSocketOffset, DeltaTime, CameraInterpSpeed);
 	}
+
+	UpdateWallCollisionTrace(DeltaTime);
 }
 
 UAbilitySystemComponent* APolarisBaseCharacter::GetAbilitySystemComponent() const
@@ -138,7 +141,6 @@ void APolarisBaseCharacter::StartAiming()
 {
 	if (AbilitySystemComponent)
 	{
-		// Вішаємо тег State.Aiming (кількість = 1)
 		AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_Aiming, 1);
 	}
 
@@ -151,7 +153,6 @@ void APolarisBaseCharacter::StopAiming()
 {
 	if (AbilitySystemComponent)
 	{
-		// Знімаємо тег State.Aiming (кількість = 0)
 		AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_Aiming, 0);
 	}
 
@@ -160,11 +161,96 @@ void APolarisBaseCharacter::StopAiming()
 	GetCharacterMovement()->MaxWalkSpeed = 500.0f; 
 }
 
+void APolarisBaseCharacter::UpdateWallCollisionTrace(float DeltaTime)
+{
+	if (OverlayState == EPolarisOverlayState::Unarmed)
+	{
+		WallProximityAlpha = FMath::FInterpTo(WallProximityAlpha, 0.0f, DeltaTime, 12.0f);
+		if (AbilitySystemComponent && IsWeaponBlocked())
+		{
+			AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_WeaponBlocked, 0);
+		}
+		return;
+	}
+
+	const FVector StartLocation = GetActorLocation() + 
+		(GetActorUpVector() * WeaponTraceHeightOffset) +
+		(GetActorRightVector() * WeaponTraceRightOffset);
+
+	FRotator TraceRotation = GetActorRotation();
+	if (IsAiming())
+	{
+		TraceRotation.Pitch = FMath::ClampAngle(GetControlRotation().Pitch, -45.0f, 45.0f);
+	}
+
+	const FVector EndLocation = StartLocation + (TraceRotation.Vector() * WeaponTraceDistance);
+		
+	TArray<AActor*> ActorsToIgnore;
+	ActorsToIgnore.Add(this);
+
+	const EDrawDebugTrace::Type DrawDebugType = bDrawDebugWallTrace
+		? EDrawDebugTrace::ForOneFrame
+		: EDrawDebugTrace::None;
+
+	FHitResult HitResult;
+	const bool bHit = UKismetSystemLibrary::SphereTraceSingle(
+		this,
+		StartLocation,
+		EndLocation,
+		WeaponTraceRadius,
+		UEngineTypes::ConvertToTraceType(ECC_Visibility),
+		false, // bTraceComplex
+		ActorsToIgnore,
+		DrawDebugType,
+		HitResult,
+		true, // bIgnoreSelf
+		FLinearColor::Green, 
+		FLinearColor::Red    
+	);
+
+	float TargetAlpha = 0.0f;
+
+	if (bHit && HitResult.bBlockingHit)
+	{
+		const float SurfaceDot = FVector::DotProduct(HitResult.ImpactNormal, FVector::UpVector);
+		if (SurfaceDot < 0.7f)
+		{
+			const float MinWallDistance = 25.0f;
+			TargetAlpha = FMath::GetMappedRangeValueClamped(
+				FVector2D(MinWallDistance, WeaponTraceDistance),
+				FVector2D(1.0f, 0.0f),
+				HitResult.Distance
+			);
+		}
+	}
+
+	WallProximityAlpha = FMath::FInterpTo(WallProximityAlpha, TargetAlpha, DeltaTime, 15.0f);
+
+	const bool bShouldBlock = WallProximityAlpha > 0.35f;
+	if (AbilitySystemComponent)
+	{
+		const bool bCurrentlyBlocked = IsWeaponBlocked();
+		if (bShouldBlock != bCurrentlyBlocked)
+		{
+			AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_WeaponBlocked, bShouldBlock ? 1 : 0);
+		}
+	}
+}
+
 bool APolarisBaseCharacter::IsAiming() const
 {
 	if (AbilitySystemComponent)
 	{
 		return AbilitySystemComponent->HasMatchingGameplayTag(PolarisGameplayTags::State_Aiming);
+	}
+	return false;
+}
+
+bool APolarisBaseCharacter::IsWeaponBlocked() const
+{
+	if (AbilitySystemComponent)
+	{
+		return AbilitySystemComponent->HasMatchingGameplayTag(PolarisGameplayTags::State_WeaponBlocked);
 	}
 	return false;
 }

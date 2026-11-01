@@ -43,8 +43,13 @@ protected:
 	void StartAiming();
 	void StopAiming();
 
+	void UpdateWallCollisionTrace(float DeltaTime);
+
 	UFUNCTION(BlueprintPure, Category = "Polaris|Combat")
 	bool IsAiming() const;
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat")
+	bool IsWeaponBlocked() const;
 
 	void GiveStartupAbilities();
 
@@ -95,6 +100,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polaris|Camera|ADS")
 	float CameraInterpSpeed = 12.0f;
 	/* adjust ADS\*/
+
+
+	/* adjust Wall Trace */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|Combat")
+	float WallProximityAlpha = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|WallTrace")
+	float WeaponTraceDistance = 110.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|WallTrace")
+	float WeaponTraceRadius = 12.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|WallTrace")
+	float WeaponTraceHeightOffset = 45.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|WallTrace")
+	float WeaponTraceRightOffset = 20.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Polaris|Combat|WallTrace")
+	bool bDrawDebugWallTrace = false;
+	/* adjust Wall Trace\*/
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UAbilitySystemComponent> AbilitySystemComponent;
