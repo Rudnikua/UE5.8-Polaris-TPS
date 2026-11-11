@@ -15,7 +15,9 @@ class UCameraComponent;
 class UInputMappingContext;
 class UAbilitySystemComponent;
 class UPolarisAttributeSet;
+class UPolarisCombatAttributeSet;
 class UGameplayAbility;
+class APolarisWeapon;
 
 UCLASS(Abstract)
 class POLARIS_API APolarisBaseCharacter : public ACharacter, public IAbilitySystemInterface
@@ -30,7 +32,22 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
 	FORCEINLINE UPolarisAttributeSet* GetAttributeSet() const { return AttributeSet; }
+	FORCEINLINE UPolarisCombatAttributeSet* GetCombatAttributeSet() const { return CombatAttributeSet; }
 
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat", meta = (BlueprintThreadSafe))
+	APolarisWeapon* GetCurrentWeapon() const { return CurrentWeapon; }
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat|Weapon", meta = (BlueprintThreadSafe))
+	bool IsWeaponEquipped() const { return CurrentWeapon != nullptr && bIsWeaponEquipped && !bIsEquipping; }
+
+	UFUNCTION(BlueprintCallable, Category = "Polaris|Combat|Weapon")
+	void AttachWeaponToHand();
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat|Weapon", meta = (BlueprintThreadSafe))
+	bool ShouldUseLeftHandIK() const;
+
+	UFUNCTION(BlueprintPure, Category = "Polaris|Combat|Weapon", meta = (BlueprintThreadSafe))
+	FTransform GetLeftHandIKTransformCS() const;
 protected:
 	virtual void BeginPlay() override;
 
@@ -42,6 +59,14 @@ protected:
 	void Look(const FInputActionValue& Value);
 	void StartAiming();
 	void StopAiming();
+	void StartFiring();
+	void StopFiring();
+
+	void SpawnDefaultWeapon();
+	void ToggleEquipWeapon();
+	void EquipWeapon();
+	void UnequipWeapon();
+	void OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted);
 
 	void UpdateWallCollisionTrace(float DeltaTime);
 
@@ -72,8 +97,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Polaris|Input")
 	TObjectPtr<UInputAction> JumpAction;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Polaris|Input")
+	TObjectPtr<UInputAction> EquipAction;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Polaris|Input")
 	TObjectPtr<UInputAction> AimAction;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Polaris|Input")
+	TObjectPtr<UInputAction> FireAction;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Polaris|Combat")
 	EPolarisOverlayState OverlayState = EPolarisOverlayState::Unarmed;
@@ -128,9 +159,35 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UPolarisAttributeSet> AttributeSet;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|GAS")
+	TObjectPtr<UPolarisCombatAttributeSet> CombatAttributeSet;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Polaris|GAS")
 	TArray<TSubclassOf<UGameplayAbility>> StartupAbilities;
 
 	UFUNCTION(BlueprintPure, Category = "Polaris|Combat")
 	FRotator GetAimOffsets() const;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|Weapon")
+	TSubclassOf<APolarisWeapon> DefaultWeaponClass;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|Weapon")
+	FName WeaponAttachSocketName = FName("WeaponSocket_R");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Polaris|Combat|Weapon")
+	FName WeaponHolsterSocketName = FName("WeaponSocket_Back");
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|Combat|Weapon")
+	TObjectPtr<APolarisWeapon> CurrentWeapon;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|Combat|Weapon")
+	bool bIsWeaponEquipped = false;
+
+	/* Animation montages */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Polaris|Combat|Weapon")
+	TObjectPtr<UAnimMontage> EquipAnimMontage;
+	/* Animation montages\*/
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Polaris|Combat|Weapon")
+	bool bIsEquipping = false;
 };

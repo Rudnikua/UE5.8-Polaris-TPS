@@ -9,4 +9,6 @@ namespace PolarisGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Action_Reloading, "State.Action.Reloading", "Character is reloading a weapon");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Equipped_Rifle, "State.Equipped.Rifle", "Character has a rifle equipped in hands");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Combat_Fire, "Ability.Combat.Fire", "Ability to fire a weapon");
 }

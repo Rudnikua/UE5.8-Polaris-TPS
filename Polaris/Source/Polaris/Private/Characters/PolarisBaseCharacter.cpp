@@ -10,9 +10,12 @@
 #include "EnhancedInputSubsystems.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/PolarisAttributeSet.h"
+#include "AbilitySystem/PolarisCombatAttributeSet.h"
 #include "Abilities/GameplayAbility.h"
 #include "AbilitySystem/PolarisGameplayTags.h"
 #include "Kismet/KismetSystemLibrary.h"
+#include "Weapons/PolarisWeapon.h"
+#include "Animation/AnimInstance.h"
 
 APolarisBaseCharacter::APolarisBaseCharacter()
 {
@@ -41,6 +44,7 @@ APolarisBaseCharacter::APolarisBaseCharacter()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 
 	AttributeSet = CreateDefaultSubobject<UPolarisAttributeSet>(TEXT("AttributeSet"));
+	CombatAttributeSet = CreateDefaultSubobject<UPolarisCombatAttributeSet>(TEXT("CombatAttributeSet"));
 }
 
 void APolarisBaseCharacter::Tick(float DeltaTime)
@@ -67,6 +71,35 @@ UAbilitySystemComponent* APolarisBaseCharacter::GetAbilitySystemComponent() cons
 	return AbilitySystemComponent;
 }
 
+void APolarisBaseCharacter::AttachWeaponToHand()
+{
+	if (!CurrentWeapon || !GetMesh()) return;
+
+	CurrentWeapon->AttachToComponent(
+		GetMesh(),
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		WeaponAttachSocketName
+	);
+}
+
+bool APolarisBaseCharacter::ShouldUseLeftHandIK() const
+{
+	return bIsWeaponEquipped && !bIsEquipping && CurrentWeapon != nullptr && OverlayState == EPolarisOverlayState::Rifle;
+}
+
+FTransform APolarisBaseCharacter::GetLeftHandIKTransformCS() const
+{
+	if (CurrentWeapon && GetMesh())
+	{
+		const FTransform LeftHandToWeapon = CurrentWeapon->GetLeftHandIKTransform();
+
+		const FTransform WeaponToHandR = GetMesh()->GetSocketTransform(WeaponAttachSocketName, RTS_ParentBoneSpace);
+
+		return LeftHandToWeapon * WeaponToHandR;
+	}
+	return FTransform::Identity;
+}
+
 void APolarisBaseCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -79,6 +112,7 @@ void APolarisBaseCharacter::BeginPlay()
 		}
 	}
 
+	SpawnDefaultWeapon();
 }
 
 void APolarisBaseCharacter::PossessedBy(AController* NewController)
@@ -104,8 +138,13 @@ void APolarisBaseCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
+		EnhancedInputComponent->BindAction(EquipAction, ETriggerEvent::Started, this, &APolarisBaseCharacter::ToggleEquipWeapon);
+
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Started, this, &APolarisBaseCharacter::StartAiming);
 		EnhancedInputComponent->BindAction(AimAction, ETriggerEvent::Completed, this, &APolarisBaseCharacter::StopAiming);
+
+		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Started, this, &APolarisBaseCharacter::StartFiring);
+		EnhancedInputComponent->BindAction(FireAction, ETriggerEvent::Completed, this, &APolarisBaseCharacter::StopFiring);
 	}
 }
 
@@ -139,6 +178,8 @@ void APolarisBaseCharacter::Look(const FInputActionValue& Value)
 
 void APolarisBaseCharacter::StartAiming()
 {
+	if (!IsWeaponEquipped()) return;
+
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->SetLooseGameplayTagCount(PolarisGameplayTags::State_Aiming, 1);
@@ -159,6 +200,103 @@ void APolarisBaseCharacter::StopAiming()
 	bUseControllerRotationYaw = false;
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->MaxWalkSpeed = 500.0f; 
+}
+
+void APolarisBaseCharacter::StartFiring()
+{
+	if (!AbilitySystemComponent || IsWeaponBlocked()) return;
+
+	FGameplayTagContainer FireTagContainer;
+	FireTagContainer.AddTag(PolarisGameplayTags::Ability_Combat_Fire);
+	AbilitySystemComponent->TryActivateAbilitiesByTag(FireTagContainer);
+}
+
+void APolarisBaseCharacter::StopFiring()
+{
+	if (!AbilitySystemComponent) return;
+
+	FGameplayTagContainer FireTagContainer;
+	FireTagContainer.AddTag(PolarisGameplayTags::Ability_Combat_Fire);
+	AbilitySystemComponent->CancelAbilities(&FireTagContainer);
+}
+
+void APolarisBaseCharacter::SpawnDefaultWeapon()
+{
+	if (!DefaultWeaponClass || !GetWorld()) return;
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.Instigator = this;
+
+	CurrentWeapon = GetWorld()->SpawnActor<APolarisWeapon>(DefaultWeaponClass, SpawnParams);
+	if (CurrentWeapon && GetMesh())
+	{
+		UnequipWeapon();
+	}
+}
+
+void APolarisBaseCharacter::ToggleEquipWeapon()
+{
+	if (!CurrentWeapon || bIsEquipping) return;
+
+	if (bIsWeaponEquipped)
+	{
+		UnequipWeapon();
+	}
+	else
+	{
+		EquipWeapon();
+	}
+}
+
+void APolarisBaseCharacter::EquipWeapon()
+{
+	if (!CurrentWeapon || !GetMesh()) return;
+
+	bIsWeaponEquipped = true;
+	OverlayState = EPolarisOverlayState::Rifle;
+
+	UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+	if (EquipAnimMontage && AnimInstance)
+	{
+		bIsEquipping = true;
+		AnimInstance->Montage_Play(EquipAnimMontage);
+
+		FOnMontageEnded EndDelegate;
+		EndDelegate.BindUObject(this, &APolarisBaseCharacter::OnEquipMontageEnded);
+		AnimInstance->Montage_SetEndDelegate(EndDelegate, EquipAnimMontage);
+	}
+	else
+	{
+		AttachWeaponToHand();
+	}
+}
+
+void APolarisBaseCharacter::UnequipWeapon()
+{
+	if (!CurrentWeapon || !GetMesh()) return;
+	
+	if (IsAiming()) StopAiming();
+
+	bIsEquipping = false;
+	bIsWeaponEquipped = false;
+	OverlayState = EPolarisOverlayState::Unarmed;
+
+	CurrentWeapon->AttachToComponent(
+		GetMesh(),
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		WeaponHolsterSocketName
+	);
+}
+
+void APolarisBaseCharacter::OnEquipMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	bIsEquipping = false;
+
+	if (bIsWeaponEquipped)
+	{
+		AttachWeaponToHand();
+	}
 }
 
 void APolarisBaseCharacter::UpdateWallCollisionTrace(float DeltaTime)
@@ -187,6 +325,7 @@ void APolarisBaseCharacter::UpdateWallCollisionTrace(float DeltaTime)
 		
 	TArray<AActor*> ActorsToIgnore;
 	ActorsToIgnore.Add(this);
+	if (CurrentWeapon) ActorsToIgnore.Add(CurrentWeapon);
 
 	const EDrawDebugTrace::Type DrawDebugType = bDrawDebugWallTrace
 		? EDrawDebugTrace::ForOneFrame

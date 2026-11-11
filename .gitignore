@@ -14,7 +14,8 @@ Build/
 DerivedDataCache/
 Intermediate/
 Saved/
-Content/Characters/
+Assets/
+Polaris/Content/Fab/
 
 # Crash reports & auto-saves
 AutoSave/
